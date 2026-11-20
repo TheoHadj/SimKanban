@@ -1,6 +1,6 @@
 import type { Column, SimulationConfig, Task, TeamMember, SimulationMetrics, MetricSnapshot, TaskCategory, StoryPoints } from '../types/kanban';
 
-export const DEV_TASKS_CATALOG: { title: string; category: TaskCategory; points: StoryPoints }[] = [
+export const DEV_TASKS_CATALOG: { title: string; category: TaskCategory; points: StoryPoints; description?: string }[] = [
   // 1-10
   { title: 'Implémentation de l\'authentification OAuth2 & JWT', category: 'security', points: 5 },
   { title: 'Optimisation des index SQL et partitionnement Postgres', category: 'database', points: 8 },
@@ -82,15 +82,18 @@ export const DEV_TASKS_CATALOG: { title: string; category: TaskCategory; points:
 export function generateInitialTasks(
   count: number,
   columns: Column[],
-  sizing: 'constant' | 'variable' = 'variable'
+  sizing: 'constant' | 'variable' = 'variable',
+  customCatalog?: { title: string; category: TaskCategory; points: StoryPoints; description?: string }[],
+  codePrefix: string = 'DEV'
 ): Task[] {
+  const catalog = customCatalog && customCatalog.length > 0 ? customCatalog : DEV_TASKS_CATALOG;
   const firstCol = columns[0];
   const activeCols = columns.filter(c => c.type === 'active');
   const tasks: Task[] = [];
 
   for (let i = 0; i < count; i++) {
-    const item = DEV_TASKS_CATALOG[i % DEV_TASKS_CATALOG.length];
-    const code = `DEV-${101 + i}`;
+    const item = catalog[i % catalog.length];
+    const code = `${codePrefix}-${101 + i}`;
     const storyPoints = item.points;
     
     // Effort proportional to Fibonacci story points (e.g. 1 SP = 2h, 2 SP = 4h, 3 SP = 6h, 5 SP = 10h, 8 SP = 16h, 13 SP = 26h)
@@ -104,7 +107,8 @@ export function generateInitialTasks(
     tasks.push({
       id: `task-${Date.now()}-${i + 1}`,
       code,
-      title: item.title + (i >= DEV_TASKS_CATALOG.length ? ` (Lot ${Math.floor(i / DEV_TASKS_CATALOG.length) + 1})` : ''),
+      title: item.title + (i >= catalog.length ? ` (Lot ${Math.floor(i / catalog.length) + 1})` : ''),
+      description: item.description,
       category: item.category,
       columnId: firstCol.id,
       priority: i === 0 ? 'urgent' : i % 5 === 0 ? 'high' : 'normal',
@@ -126,32 +130,35 @@ export function generateBatchTasks(
   batchCount: number,
   existingCount: number,
   columns: Column[],
-  currentHour: number = 0
+  currentHour: number = 0,
+  customCatalog?: { title: string; category: TaskCategory; points: StoryPoints; description?: string }[],
+  codePrefix: string = 'DEV'
 ): Task[] {
+  const catalog = customCatalog && customCatalog.length > 0 ? customCatalog : DEV_TASKS_CATALOG;
   const firstCol = columns[0];
   const activeCols = columns.filter(c => c.type === 'active');
-  const newTasks: Task[] = [];
+  const tasks: Task[] = [];
 
   for (let i = 0; i < batchCount; i++) {
-    const taskIndex = existingCount + i;
-    const item = DEV_TASKS_CATALOG[taskIndex % DEV_TASKS_CATALOG.length];
-    const code = `DEV-${101 + taskIndex}`;
+    const idx = existingCount + i;
+    const item = catalog[idx % catalog.length];
+    const code = `${codePrefix}-${101 + idx}`;
     const storyPoints = item.points;
 
     const baseEffort = storyPoints * 2;
     let totalEffort = 0;
     activeCols.forEach(() => {
-      const variance = 0.85 + Math.random() * 0.3;
-      totalEffort += Math.round((baseEffort / Math.max(1, activeCols.length)) * variance);
+      totalEffort += Math.round(baseEffort / Math.max(1, activeCols.length));
     });
 
-    newTasks.push({
-      id: `task-${Date.now()}-${taskIndex + 1}`,
+    tasks.push({
+      id: `task-${Date.now()}-${idx + 1}`,
       code,
-      title: item.title + (taskIndex >= DEV_TASKS_CATALOG.length ? ` (Lot ${Math.floor(taskIndex / DEV_TASKS_CATALOG.length) + 1})` : ''),
+      title: item.title,
+      description: item.description,
       category: item.category,
       columnId: firstCol.id,
-      priority: taskIndex % 6 === 0 ? 'high' : 'normal',
+      priority: idx % 6 === 0 ? 'urgent' : idx % 3 === 0 ? 'high' : 'normal',
       storyPoints,
       totalEffortHours: Math.max(2, totalEffort),
       remainingEffortHours: 0,
@@ -163,7 +170,7 @@ export function generateBatchTasks(
     });
   }
 
-  return newTasks;
+  return tasks;
 }
 
 export function createUrgentTask(currentHour: number, columns: Column[], currentTaskCount: number): Task {

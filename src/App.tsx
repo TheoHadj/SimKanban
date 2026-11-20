@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import type { Column, ColumnType, SimulationConfig, SimulationMetrics, Task, TeamMember, MetricSnapshot, ScenarioPreset, StoryPoints, CategoryDefinition, RoleDefinition } from './types/kanban';
-import { DEFAULT_COLUMNS, DEFAULT_CONFIG, DEFAULT_MEMBERS, DEFAULT_CATEGORIES, DEFAULT_ROLES } from './utils/presets';
+import { PROJECT_PIXELS_DRAGONS, AVAILABLE_PROJECTS } from './utils/projects';
 import { generateInitialTasks, generateBatchTasks, simulateOneHour, createUrgentTask } from './utils/engine';
 import { LinearHeader } from './components/LinearHeader';
 import type { ActiveTab, AppMode } from './components/LinearHeader';
@@ -12,22 +12,35 @@ import { TaskEditModal } from './components/TaskEditModal';
 import { SettingsModal } from './components/SettingsModal';
 import { ScenariosModal } from './components/ScenariosModal';
 import { SprintEndModal } from './components/SprintEndModal';
+import { SprintRetrospectiveView } from './components/SprintRetrospectiveView';
+import { LeanPresentationView } from './components/LeanPresentationView';
+import { HomeProjectsView } from './components/HomeProjectsView';
 
 export const App: React.FC = () => {
+  // Active Project (default to Pixels & Dragons case study)
+  const [currentProjectId, setCurrentProjectId] = useState<string>('pixels-dragons');
+  const currentProject = AVAILABLE_PROJECTS.find(p => p.id === currentProjectId) || PROJECT_PIXELS_DRAGONS;
+
   // Navigation & Mode
   const [activeTab, setActiveTab] = useState<ActiveTab>('board');
   const [appMode, setAppMode] = useState<AppMode>('simulator');
 
-  // Core Kanban Configuration (The 7 Criteria)
-  const [config, setConfig] = useState<SimulationConfig>(DEFAULT_CONFIG);
-  const [columns, setColumns] = useState<Column[]>(DEFAULT_COLUMNS);
-  const [members, setMembers] = useState<TeamMember[]>(DEFAULT_MEMBERS);
-  const [categories, setCategories] = useState<CategoryDefinition[]>(DEFAULT_CATEGORIES);
-  const [roles, setRoles] = useState<RoleDefinition[]>(DEFAULT_ROLES);
+  // Core Kanban Configuration (The 7 Criteria) initialized with Pixels & Dragons
+  const [config, setConfig] = useState<SimulationConfig>(PROJECT_PIXELS_DRAGONS.config);
+  const [columns, setColumns] = useState<Column[]>(PROJECT_PIXELS_DRAGONS.columns);
+  const [members, setMembers] = useState<TeamMember[]>(PROJECT_PIXELS_DRAGONS.members);
+  const [categories, setCategories] = useState<CategoryDefinition[]>(PROJECT_PIXELS_DRAGONS.categories);
+  const [roles, setRoles] = useState<RoleDefinition[]>(PROJECT_PIXELS_DRAGONS.roles);
 
   // Simulation execution state
   const [tasks, setTasks] = useState<Task[]>(() =>
-    generateInitialTasks(DEFAULT_CONFIG.initialTaskCount, DEFAULT_COLUMNS, DEFAULT_CONFIG.taskSizing)
+    generateInitialTasks(
+      PROJECT_PIXELS_DRAGONS.config.initialTaskCount,
+      PROJECT_PIXELS_DRAGONS.columns,
+      PROJECT_PIXELS_DRAGONS.config.taskSizing,
+      PROJECT_PIXELS_DRAGONS.taskCatalog,
+      'PIX'
+    )
   );
   const [currentHour, setCurrentHour] = useState<number>(0);
   const [isRunning, setIsRunning] = useState<boolean>(false);
@@ -51,7 +64,7 @@ export const App: React.FC = () => {
       sprintProgressPercent: 0,
       completedTasksCount: 0,
       completedPointsCount: 0,
-      totalTasksCount: DEFAULT_CONFIG.initialTaskCount,
+      totalTasksCount: PROJECT_PIXELS_DRAGONS.config.initialTaskCount,
       totalPointsCount: initialPts,
       wipCount: 0,
       averageLeadTimeHours: 0,
@@ -121,10 +134,60 @@ export const App: React.FC = () => {
   // Simulation Controls
   const handlePlay = () => setIsRunning(true);
   const handlePause = () => setIsRunning(false);
+
+  const handleSelectProject = (projectId: string) => {
+    const p = AVAILABLE_PROJECTS.find(proj => proj.id === projectId) || PROJECT_PIXELS_DRAGONS;
+    setCurrentProjectId(p.id);
+    setConfig(p.config);
+    setColumns(p.columns);
+    setMembers(p.members);
+    setCategories(p.categories);
+    setRoles(p.roles);
+
+    setIsRunning(false);
+    setCurrentHour(0);
+    const codePrefix = p.id === 'pixels-dragons' ? 'PIX' : 'DEV';
+    const newTasks = generateInitialTasks(
+      p.config.initialTaskCount,
+      p.columns,
+      p.config.taskSizing,
+      p.taskCatalog,
+      codePrefix
+    );
+    const totalPts = newTasks.reduce((s, t) => s + (t.storyPoints || 0), 0);
+    setTasks(newTasks);
+    setMembers(p.members.map(m => ({ ...m, currentTaskId: undefined, hoursContributed: 0, tasksCompleted: 0, pointsDelivered: 0 })));
+    setSnapshots([]);
+    setMetrics({
+      currentHour: 0,
+      currentDay: 1,
+      currentSprint: 1,
+      sprintProgressPercent: 0,
+      completedTasksCount: 0,
+      completedPointsCount: 0,
+      totalTasksCount: newTasks.length,
+      totalPointsCount: totalPts,
+      wipCount: 0,
+      averageLeadTimeHours: 0,
+      averageCycleTimeHours: 0,
+      throughputPerDay: 0,
+      teamUtilizationRate: 0,
+      flowEfficiency: 100,
+    });
+    setActiveTab('board');
+  };
+
   const handleReset = () => {
     setIsRunning(false);
     setCurrentHour(0);
-    const newTasks = generateInitialTasks(config.initialTaskCount, columns, config.taskSizing);
+    const codePrefix = currentProject.id === 'pixels-dragons' ? 'PIX' : 'DEV';
+    const newTasks = generateInitialTasks(
+      config.initialTaskCount,
+      columns,
+      config.taskSizing,
+      currentProject.taskCatalog,
+      codePrefix
+    );
     const totalPts = newTasks.reduce((s, t) => s + (t.storyPoints || 0), 0);
     setTasks(newTasks);
     setMembers(members.map(m => ({ ...m, currentTaskId: undefined, hoursContributed: 0, tasksCompleted: 0, pointsDelivered: 0 })));
@@ -161,15 +224,60 @@ export const App: React.FC = () => {
 
   // Live Aléas & Batch tasks
   const handleAddBatchTasks = useCallback(() => {
-    const newTasks = generateBatchTasks(10, tasks.length, columns, currentHour);
+    const codePrefix = currentProject.id === 'pixels-dragons' ? 'PIX' : 'DEV';
+    const newTasks = generateBatchTasks(
+      10,
+      tasks.length,
+      columns,
+      currentHour,
+      currentProject.taskCatalog,
+      codePrefix
+    );
     const addedPoints = newTasks.reduce((s, t) => s + (t.storyPoints || 0), 0);
     setTasks(prev => [...prev, ...newTasks]);
     setMetrics(prev => ({
       ...prev,
       totalTasksCount: prev.totalTasksCount + newTasks.length,
-      totalPointsCount: (prev.totalPointsCount || 0) + addedPoints,
+      totalPointsCount: prev.totalPointsCount + addedPoints,
     }));
-  }, [tasks.length, columns, currentHour]);
+  }, [tasks.length, columns, currentHour, currentProject]);
+
+  const handleAddKaizenTaskToBoard = (title: string, category: string, impact: string) => {
+    const codePrefix = currentProject.id === 'pixels-dragons' ? 'PIX' : 'DEV';
+    const firstCol = columns[0];
+    const activeCols = columns.filter(c => c.type === 'active');
+    const baseEffort = 3 * 2; // 3 Story points
+    let totalEffort = 0;
+    activeCols.forEach(() => {
+      totalEffort += Math.round(baseEffort / Math.max(1, activeCols.length));
+    });
+
+    const newTask: Task = {
+      id: `task-${Date.now()}`,
+      code: `${codePrefix}-${100 + tasks.length + 1}`,
+      title: `[Kaizen] ${title}`,
+      description: `Action d'amélioration continue : ${impact}`,
+      category: category || currentProject.categories[0]?.id || 'data',
+      columnId: firstCol.id,
+      priority: 'high',
+      storyPoints: 3,
+      totalEffortHours: Math.max(2, totalEffort),
+      remainingEffortHours: 0,
+      currentColumnEffortHours: 0,
+      assignedMemberIds: [],
+      isBlocked: false,
+      createdAtHour: currentHour,
+      history: [{ columnId: firstCol.id, enteredAtHour: currentHour }],
+    };
+
+    setTasks(prev => [newTask, ...prev]);
+    setMetrics(prev => ({
+      ...prev,
+      totalTasksCount: prev.totalTasksCount + 1,
+      totalPointsCount: prev.totalPointsCount + 3,
+    }));
+    setActiveTab('board');
+  };
 
   const handleAddUrgentTask = () => {
     const urgent = createUrgentTask(currentHour, columns, tasks.length);
@@ -450,17 +558,28 @@ export const App: React.FC = () => {
         onModeChange={setAppMode}
         metrics={metrics}
         config={config}
+        currentProject={currentProject}
+        onSelectProject={handleSelectProject}
         onOpenSettings={() => setIsSettingsOpen(true)}
         onOpenScenarios={() => setIsScenariosOpen(true)}
       />
 
       {/* 2. Main Content Area */}
       <main className="flex-1 flex flex-col min-h-0 overflow-hidden">
+        {activeTab === 'home' && (
+          <HomeProjectsView
+            currentProjectId={currentProjectId}
+            onSelectProject={handleSelectProject}
+            onOpenPresentation={() => setActiveTab('presentation')}
+          />
+        )}
+
         {activeTab === 'board' && (
           <LinearKanbanBoard
             columns={columns}
             tasks={tasks}
             members={members}
+            categories={categories}
             isManualMode={appMode === 'manual'}
             onSelectTask={handleOpenEditTask}
             onAddTask={handleOpenCreateTask}
@@ -496,10 +615,23 @@ export const App: React.FC = () => {
             hoursPerDay={config.hoursPerDay || 8}
           />
         )}
+
+        {activeTab === 'retro' && (
+          <SprintRetrospectiveView
+            currentSprint={metrics.currentSprint}
+            metrics={metrics}
+            currentProject={currentProject}
+            onAddKaizenTaskToBoard={handleAddKaizenTaskToBoard}
+          />
+        )}
+
+        {activeTab === 'presentation' && (
+          <LeanPresentationView />
+        )}
       </main>
 
-      {/* 3. Sleek Timeline Control Dock (Simulator Mode) */}
-      {appMode === 'simulator' && (
+      {/* 3. Sleek Timeline Control Dock (Simulator Mode, visible on board, dashboard & analytics) */}
+      {appMode === 'simulator' && (activeTab === 'board' || activeTab === 'dashboard' || activeTab === 'analytics') && (
         <SimulationDock
           isRunning={isRunning}
           speed={speed}
@@ -560,6 +692,11 @@ export const App: React.FC = () => {
         onClose={() => setIsSprintEndOpen(false)}
         metrics={metrics}
         config={config}
+        currentProjectId={currentProjectId}
+        onOpenRetro={() => {
+          setIsSprintEndOpen(false);
+          setActiveTab('retro');
+        }}
         onContinue={() => {
           setIsSprintEndOpen(false);
           setIsRunning(true);

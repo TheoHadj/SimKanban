@@ -20,6 +20,7 @@ interface LinearKanbanBoardProps {
   columns: Column[];
   tasks: Task[];
   members: TeamMember[];
+  categories?: import('../types/kanban').CategoryDefinition[];
   isManualMode: boolean;
   onSelectTask: (task: Task) => void;
   onAddTask: (colId?: string) => void;
@@ -37,6 +38,7 @@ export const LinearKanbanBoard: React.FC<LinearKanbanBoardProps> = ({
   columns,
   tasks,
   members,
+  categories = [],
   isManualMode,
   onSelectTask,
   onAddTask,
@@ -68,6 +70,9 @@ export const LinearKanbanBoard: React.FC<LinearKanbanBoardProps> = ({
   const [newColMaxPeople, setNewColMaxPeople] = useState<number>(2);
 
   const memberMap = new Map<string, TeamMember>(members.map(m => [m.id, m]));
+  const categoryMap = new Map<string, { name: string; color: string }>(
+    categories.map(c => [c.id, { name: c.name, color: c.color }])
+  );
 
   const saveRename = (colId: string) => {
     if (editingName.trim()) {
@@ -109,13 +114,31 @@ export const LinearKanbanBoard: React.FC<LinearKanbanBoardProps> = ({
 
   const getCategoryBadge = (cat?: TaskCategory) => {
     if (!cat) return null;
-    const styles: Record<TaskCategory, string> = {
+    const catDef = categoryMap.get(cat);
+    if (catDef) {
+      return (
+        <span
+          className="text-[10px] font-mono font-medium px-1.5 py-0.5 rounded border uppercase tracking-wider"
+          style={{
+            backgroundColor: `${catDef.color}15`,
+            borderColor: `${catDef.color}40`,
+            color: catDef.color,
+          }}
+        >
+          {catDef.name.length > 15 ? catDef.name.substring(0, 15) + '…' : catDef.name}
+        </span>
+      );
+    }
+    const styles: Record<string, string> = {
       backend: 'bg-indigo-950/60 text-indigo-300 border-indigo-800/50',
       frontend: 'bg-cyan-950/60 text-cyan-300 border-cyan-800/50',
       database: 'bg-emerald-950/60 text-emerald-300 border-emerald-800/50',
       devops: 'bg-orange-950/60 text-orange-300 border-orange-800/50',
       security: 'bg-rose-950/60 text-rose-300 border-rose-800/50',
       qa: 'bg-purple-950/60 text-purple-300 border-purple-800/50',
+      data: 'bg-blue-950/60 text-blue-300 border-blue-800/50',
+      game: 'bg-purple-950/60 text-purple-300 border-purple-800/50',
+      support: 'bg-amber-950/60 text-amber-300 border-amber-800/50',
     };
     return (
       <span className={`text-[10px] font-mono font-medium px-1.5 py-0.5 rounded border uppercase tracking-wider ${styles[cat] || 'bg-zinc-800 text-zinc-300 border-zinc-700'}`}>
@@ -134,7 +157,7 @@ export const LinearKanbanBoard: React.FC<LinearKanbanBoardProps> = ({
             <Search className="w-3.5 h-3.5 text-zinc-500 absolute left-2.5 top-1/2 -translate-y-1/2" />
             <input
               type="text"
-              placeholder="Filtrer tickets (DEV-101, SQL...)"
+              placeholder="Filtrer tickets (DEV-101, PIX-101...)"
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
               className="w-full bg-zinc-900 border border-zinc-800 rounded-md pl-8 pr-2.5 py-1 text-xs text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-zinc-600 transition"
@@ -148,12 +171,22 @@ export const LinearKanbanBoard: React.FC<LinearKanbanBoardProps> = ({
             className="bg-zinc-900 border border-zinc-800 rounded-md px-2.5 py-1 text-xs text-zinc-300 focus:outline-none focus:border-zinc-600"
           >
             <option value="all">Toutes catégories</option>
-            <option value="backend">Backend</option>
-            <option value="frontend">Frontend</option>
-            <option value="database">Database</option>
-            <option value="devops">DevOps</option>
-            <option value="security">Sécurité</option>
-            <option value="qa">QA / Tests</option>
+            {categories.length > 0 ? (
+              categories.map(c => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))
+            ) : (
+              <>
+                <option value="backend">Backend</option>
+                <option value="frontend">Frontend</option>
+                <option value="database">Database</option>
+                <option value="devops">DevOps</option>
+                <option value="security">Sécurité</option>
+                <option value="qa">QA / Tests</option>
+              </>
+            )}
           </select>
 
           {/* Member Filter */}

@@ -117,3 +117,47 @@ export interface ScenarioPreset {
   columns: Column[];
   members: TeamMember[];
 }
+
+export type KaizenCategory = 'process' | 'tech' | 'team' | 'muda';
+
+export interface KaizenAction {
+  id: string;
+  sprint: number;
+  title: string;
+  category: KaizenCategory;
+  impact: string;
+  status: 'todo' | 'in_progress' | 'done';
+  owner?: string;
+}
+
+export interface SprintRetrospective {
+  sprintNumber: number;
+  date: string;
+  wentWell: string[];
+  mudasIdentified: { type: string; description: string; severity: 'low' | 'medium' | 'high' }[];
+  actions: KaizenAction[];
+  notes?: string;
+}
+
+export interface ProjectTemplate {
+  id: string;
+  title: string;
+  shortName: string;
+  subtitle: string;
+  description: string;
+  badge: string;
+  icon: string; // Emoji
+  accentColor: string; // Tailwind color name like 'amber' | 'purple' | 'cyan'
+  companyContext: {
+    name: string;
+    metrics: { label: string; value: string; hint?: string }[];
+    problematiques: string[];
+    objectifsLean: string[];
+  };
+  config: SimulationConfig;
+  columns: Column[];
+  members: TeamMember[];
+  categories: CategoryDefinition[];
+  roles: RoleDefinition[];
+  taskCatalog: { title: string; category: TaskCategory; points: StoryPoints; description?: string }[];
+}
